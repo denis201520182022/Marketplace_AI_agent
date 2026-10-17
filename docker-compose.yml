@@ -1,0 +1,133 @@
+version: '3.8'
+
+services:
+  # ============================================================================
+  # База данных PostgreSQL 16 (для приложения)
+  # ============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai_salers_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-ai_for_salers}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ai_for_salers}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Кэш и дедупликация Redis 7
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: ai_salers_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ============================================================================
+  # Брокер сообщений RabbitMQ 3.13
+  # ============================================================================
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: ai_salers_rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Векторное хранилище Qdrant (для эмбеддингов базы знаний)
+  # ============================================================================
+  qdrant:
+    image: qdrant/qdrant:v1.11.3
+    container_name: ai_salers_qdrant
+    restart: unless-stopped
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+
+  # ============================================================================
+  # Observability Стек: Prometheus, Grafana, Loki, Promtail
+  # ============================================================================
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: ai_salers_prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: ai_salers_grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+  loki:
+    image: grafana/loki:3.1.1
+    container_name: ai_salers_loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki_data:/loki
+
+  promtail:
+    image: grafana/promtail:3.1.1
+    container_name: ai_salers_promtail
+    restart: unless-stopped
+    volumes:
+      - /var/log:/var/log:ro
+      - ./deploy/monitoring/promtail.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  qdrant_data:
+  # Observability
+  prometheus_data:
+  grafana_data:
+  loki_data:

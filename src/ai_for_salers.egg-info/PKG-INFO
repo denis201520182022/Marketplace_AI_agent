@@ -1,0 +1,92 @@
+Metadata-Version: 2.4
+Name: ai-for-salers
+Version: 0.1.0
+Summary: Омниканальный AI-агент для автоматизации поддержки селлеров Wildberries и Ozon
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi>=0.115.0
+Requires-Dist: uvicorn[standard]>=0.31.0
+Requires-Dist: pydantic>=2.9.0
+Requires-Dist: pydantic-settings>=2.5.0
+Requires-Dist: sqlalchemy[asyncio]>=2.0.35
+Requires-Dist: asyncpg>=0.29.0
+Requires-Dist: alembic>=1.13.3
+Requires-Dist: aio-pika>=9.4.3
+Requires-Dist: redis>=5.1.0
+Requires-Dist: aiogram>=3.13.1
+Requires-Dist: httpx>=0.27.2
+Requires-Dist: cryptography>=43.0.1
+Requires-Dist: prometheus-client>=0.21.0
+Requires-Dist: langchain>=0.3.0
+Requires-Dist: langgraph>=0.2.20
+Requires-Dist: langfuse>=2.50.0
+Requires-Dist: pdfplumber>=0.11.4
+Requires-Dist: python-docx>=1.1.2
+Requires-Dist: openpyxl>=3.1.5
+Requires-Dist: python-json-logger>=2.0.7
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3.3; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.24.0; extra == "dev"
+Requires-Dist: pytest-mock>=3.14.0; extra == "dev"
+Requires-Dist: ruff>=0.6.9; extra == "dev"
+Requires-Dist: mypy>=1.11.2; extra == "dev"
+
+# AI for Salers — Омниканальный AI-агент для селлеров Wildberries и Ozon
+
+> Высоконадежная отказоустойчивая система автоматизации поддержки селлеров с использованием ИИ (LangGraph, OpenAI), омниканальным управлением (Telegram + MAX) и поддержкой 100% суверенного РФ-контура или гибридного прокси-режима.
+
+## 🚀 Быстрый старт (Этап 1: Инфраструктура)
+
+### 1. Переменные окружения
+Скопируйте шаблон переменных окружения:
+```bash
+cp .env.example .env
+```
+
+### 2. Запуск локальной инфраструктуры (Docker Compose)
+Поднимите все необходимые сервисы:
+```bash
+docker compose up -d
+```
+Стек включает в себя:
+- **PostgreSQL 16** (порт 5432)
+- **Redis 7** (порт 6379)
+- **RabbitMQ 3.13** (порты 5672, 15672)
+- **Qdrant** (порт 6333)
+- **Prometheus** (порт 9090)
+- **Grafana** (порт 3000, логин/пароль: `admin`/`admin`)
+- **Loki** (порт 3100)
+- **Promtail**
+
+### 3. Установка зависимостей в виртуальное окружение
+```bash
+python -m pip install -e ".[dev]"
+```
+
+### 4. Применение миграций базы данных (Alembic)
+```bash
+alembic upgrade head
+```
+
+### 5. Запуск веб-сервиса FastAPI
+```bash
+uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 6. Проверка здоровья сервиса
+- **Liveness probe:** `GET http://localhost:8000/health`
+- **Readiness probe:** `GET http://localhost:8000/ready` (проверяет статус PostgreSQL, Redis, RabbitMQ)
+- **Метрики:** `GET http://localhost:8000/metrics`
+
+### 7. Запуск автотестов
+```bash
+pytest tests/unit/test_crypto.py -v
+```
+
+## 📚 Документация проекта
+- [Техническая спецификация](docs/SPECIFICATION.md)
+- [ROADMAP поэтапной разработки](docs/ROADMAP.md)
+- [Регламент подключения селлеров](docs/seller_onboarding_guide.md)
+- [Экономика и юнит-экономика токенов](docs/economics_and_budget.md)
+- [Интеграция Wildberries API](docs/wb_api.md)
+- [Интеграция Ozon API](docs/ozon_api.md)

@@ -41,7 +41,7 @@ flowchart TB
         RedisLock["Redis (Deduplication, Distributed Semaphores, Token Audit)"]
     end
 
-    subgraph Workers["Распределенные воркеры (Taskiq / aio-pika)"]
+    subgraph Workers["Распределенные воркеры (RabbitMQ aio-pika)"]
         PollerWorker["Poller Workers (WB/Ozon Monitor c Rate Limiter)"]
         AIWorker["AI Agent Worker (LangGraph + RAG)"]
         PublisherWorker["Publisher Worker (WB/Ozon API)"]
@@ -53,7 +53,6 @@ flowchart TB
         Ozon_API["Ozon Seller API"]
         OpenAI_API["LLM Provider (OpenAI GPT-4o-mini / Universal)"]
         YooKassa["ЮKassa (СБП / Платежные ссылки)"]
-        LangfuseSvc["Langfuse (LLM Tracing & Token Analytics)"]
     end
 
     subgraph Storage["Слой хранения данных"]
@@ -61,11 +60,12 @@ flowchart TB
         Qdrant[(Qdrant: Vector Store для будущих эмбеддингов БЗ)]
     end
 
-    subgraph Monitoring["Стек мониторинга"]
+    subgraph Monitoring["Стек мониторинга и наблюдаемости"]
         Prometheus["Prometheus"]
         Grafana["Grafana"]
         Loki["Loki (JSON Logs)"]
         AlertManager["Incident Alerting -> Admin TG & MAX"]
+        LangfuseSvc["Langfuse Self-Hosted (LLM Tracing & Token Analytics)\nlocal container: port 3002"]
     end
 
     TG <--> UnifiedBot
@@ -100,7 +100,7 @@ flowchart TB
 ```mermaid
 flowchart LR
     subgraph Russia["Основной сервер (РФ, Timeweb Cloud)"]
-        CoreApp["FastAPI + Taskiq / aio-pika Workers\nPostgreSQL, Redis, RabbitMQ, Qdrant"]
+        CoreApp["FastAPI + RabbitMQ aio-pika Workers\nPostgreSQL, Redis, RabbitMQ, Qdrant"]
         MaxClient["MAX Bot Client (VK API)"]
         WBClient["WB/Ozon Client"]
     end
@@ -511,9 +511,11 @@ stateDiagram-v2
 ## 7. Учёт ресурсов, токенов и Биллинг
 
 ### 7.1. Двойной учёт токенов (Redundancy)
-* **Основной источник (Langfuse):**
-  * Все LLM-вызовы оборачиваются в трейсы Langfuse.
+* **Основной источник — Self-Hosted Langfuse (локальный сервер, порт 3002):**
+  * Все LLM-вызовы оборачиваются в трейсы локального Langfuse-сервера, поднятого в Docker Compose.
+  * **Облачный Langfuse Cloud не используется** — все данные трейсов хранятся в собственной инфраструктуре (ClickHouse + PostgreSQL + MinIO).
   * Фиксируются: `trace_id`, `seller_id`, модель, входные токены, выходные токены, задержка (latency) и расчётная стоимость в USD/RUB.
+  * Web UI Langfuse доступен по адресу `http://localhost:3002` (в продакшне — закрытый внутренний порт).
 * **Резервный локальный учёт (Redis + PostgreSQL):**
   * Для каждого селлера в Redis ведётся атомарный инкремент счётчиков:
     * `seller:{id}:tokens:total`
@@ -821,7 +823,7 @@ AI_for_salers/
 │   │   ├── service.py
 │   │   └── webhook_handler.py
 │   │
-│   ├── workers/                    # Фоновые воркеры и очереди (Taskiq / aio-pika)
+│   ├── workers/                    # Фоновые воркеры и очереди (чистый RabbitMQ aio-pika)
 │   │   ├── rabbitmq_bus.py         # Клиент очередей с DLX и Manual ACK
 │   │   ├── poller_worker.py        # Мониторинг WB/Ozon
 │   │   ├── ai_worker.py            # Вызов генерации ответа
@@ -890,13 +892,13 @@ AI_for_salers/
 ### Этап 5: ИИ-агент (LangGraph + OpenAI) и Аналитика
 * Сборка графа состояний LangGraph (оценка тональности, классификация, фактчекинг, выбор стратегии ответа).
 * Интеграция с OpenAI `gpt-4o-mini` через forward-прокси (с возможностью переключения на GigaChat/YandexGPT).
-* Подключение трейсинга Langfuse для аудита токенов и задержек.
+* Подключение трейсинга к **Self-Hosted Langfuse** (локальный контейнер, порт 3002) для аудита токенов и задержек — без зависимости от облачных сервисов.
 * Реализация логики Human-in-the-loop (отправка карточки в ЛС или групповой чат селлера с кнопками `[ Одобрить ]`, `[ Редактировать ]`, `[ Сгенерировать заново ]`).
 * Модуль AI-аналитики: кластеризация болей покупателей, анализ частых вопросов, еженедельный дайджест и рекомендации по оптимизации карточек.
 
 ### Этап 6: Очереди, Воркеры, Идемпотентность и Защита от гонок
 * Настройка топологии RabbitMQ (Exchanges: `events.inbound`, `ai.processing`, `events.escalation`, `marketplace.publish`, `events.dlx`).
-* Реализация распределенных воркеров на Taskiq / aio-pika (Poller, AI, Publisher, Scheduler).
+* Реализация распределенных воркеров на чистом RabbitMQ aio-pika (Poller, AI, Publisher, Scheduler).
 * Интеграция двухуровневой идемпотентности: краткосрочный Redis Lease Lock (120 с) + проверка статуса в PostgreSQL.
 * Реализация защиты от одновременных действий менеджеров в групповом чате (Redis Distributed Action Lock).
 
